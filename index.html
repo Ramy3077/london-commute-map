@@ -6,6 +6,20 @@
 <title>London Commute Map</title>
 <meta name="description" content="How long door-to-desk commutes to a London station take, for several destinations, with a direct-only view for single-seat rides. Powered by TfL Open Data.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230b6fb8%27/%3E%3Ctext x=%2716%27 y=%2724%27 font-size=%2722%27 text-anchor=%27middle%27 fill=%27white%27%3E%E2%98%85%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
+<script>
+// Start the data requests now, in parallel with Leaflet loading, instead of
+// after it. The destination guess matches what init() will pick.
+(function () {
+  var f = function (u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(u + " " + r.status); return r.json(); }); };
+  var want = ""; try { want = location.hash.slice(1) || localStorage.getItem("dest") || ""; } catch (e) {}
+  if (!/^[a-z-]+$/.test(want)) want = "liverpool-street";
+  var E = window.__early = { base: f("data/base.json"), manifest: f("data/destinations.json"), dest: {} };
+  E.dest[want] = f("data/" + want + ".json");
+  E.base.catch(function () {}); E.manifest.catch(function () {}); E.dest[want].catch(function () {});
+})();
+</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -53,6 +67,14 @@
   .dest { display: block; margin-top: 12px; font-size: 12px; color: var(--dim); }
   .dest select { display: block; width: 100%; margin-top: 4px; padding: 9px 10px; font: inherit; font-size: 14px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
   .dest select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .map-loading { position: fixed; left: 16px; top: 16px; z-index: 1000; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 99px; padding: 6px 14px; font-size: 12.5px; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+  .map-loading[hidden] { display: none; }
+  .skel { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+  .skel i { display: block; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--line), var(--accent-soft), var(--line)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+  .skel i + i { margin-top: 9px; width: 55%; }
+  .loading-msg { color: var(--dim); font-size: 12.5px; margin-bottom: 8px; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .skel i { animation: none; } }
   .err { color: #b42318; font-size: 13px; margin-top: 12px; }
   .legend-title { font-size: 12px; color: var(--dim); margin-top: 16px; }
   .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--dim); }
@@ -95,6 +117,7 @@
 <body>
 <div class="app">
   <div id="map" role="application" aria-label="Map of commute times to the chosen London station"></div>
+  <div class="map-loading" id="mapLoading" role="status">Loading journey times…</div>
 
   <aside class="side">
     <div class="pad">
@@ -127,7 +150,7 @@
       <label class="check"><input type="checkbox" id="showStations" checked> Stations (outline colour shows zone: dark 1, blue 2, grey 3+)</label>
 
       <h2 id="listTitle">Districts, fastest first</h2>
-      <div id="cards"></div>
+      <div id="cards" aria-live="polite"><p class="loading-msg">Loading journey times…</p><div class="skel"><i></i><i></i></div><div class="skel"><i></i><i></i></div><div class="skel"><i></i><i></i></div><div class="skel"><i></i><i></i></div></div>
 
       <footer>
         <p>Journey times: <a href="https://tfl.gov.uk/info-for/open-data-users/" target="_blank" rel="noopener">Powered by TfL Open Data</a>, used under the Open Government Licence v3.0. Contains OS data &copy; Crown copyright and database rights. Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Postcode district outlines from <a href="https://github.com/missinglink/uk-postcode-polygons" target="_blank" rel="noopener">uk-postcode-polygons</a>.</p>
@@ -148,6 +171,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const E = window.__early || { dest: {} };
 const fetchJSON = url => fetch(url).then(r => { if (!r.ok) throw new Error(url + " " + r.status); return r.json(); });
 
 // ---------- intro ----------
@@ -272,7 +296,8 @@ function applyRoute() {
   $("routeHint").textContent = r === "any"
     ? "Fastest journey, changes allowed."
     : "Single-seat rides only: one tube, rail or bus leg, walking at each end. Faded areas have none.";
-  for (const k of ["any", "direct"]) if (map.hasLayer(bands[k])) map.removeLayer(bands[k]);
+  for (const k of ["any", "direct"]) if (bands[k] && map.hasLayer(bands[k])) map.removeLayer(bands[k]);
+  if (!bands[r]) bands[r] = bandGroup(r);
   bands[r].addTo(map);
   for (const d of Object.values(districts)) layers[d.code].setStyle(style(d));
   renderCards();
@@ -287,12 +312,17 @@ function legend() {
   $("legendLabels").innerHTML = lv.slice(0, -1).map((lo, i) =>
     `<span>${i === 0 ? "&lt;" + lv[1] : lo + "-" + lv[i + 1]}</span>`).join("");
 }
+function showLoading() {
+  $("cards").innerHTML = '<p class="loading-msg">Loading journey times\u2026</p>' + '<div class="skel"><i></i><i></i></div>'.repeat(4);
+}
 async function showDest(id, first) {
   const meta = MANIFEST.find(m => m.id === id) || MANIFEST[0];
   $("dest").value = meta.id;
+  if (!destData[meta.id] && !first) { showLoading(); $("mapLoading").hidden = false; }
   try {
-    if (!destData[meta.id]) destData[meta.id] = await fetchJSON(`data/${meta.id}.json`);
+    if (!destData[meta.id]) destData[meta.id] = await (E.dest[meta.id] || fetchJSON(`data/${meta.id}.json`));
   } catch (e) {
+    $("mapLoading").hidden = true;
     $("cards").innerHTML = `<p class="err">Could not load data for ${esc(meta.name)}. Try again.</p>`;
     return;
   }
@@ -306,8 +336,8 @@ async function showDest(id, first) {
     const t = cur.districts[code] || [null, null, 0, []];
     districts[code] = { code, name: d.name, rings: d.rings, ta: t[0], td: t[1], via: t[3] };
   }
-  if (bands) for (const k of ["any", "direct"]) if (map.hasLayer(bands[k])) map.removeLayer(bands[k]);
-  bands = { any: bandGroup("any"), direct: bandGroup("direct") };
+  if (bands) for (const k of ["any", "direct"]) if (bands[k] && map.hasLayer(bands[k])) map.removeLayer(bands[k]);
+  bands = { any: null, direct: null };
 
   if (starMarker) map.removeLayer(starMarker);
   starMarker = L.marker([meta.lat, meta.lng], {
@@ -319,13 +349,15 @@ async function showDest(id, first) {
   $("ref").textContent = BASE.commute_ref + " · built " + cur.built_at.slice(0, 10);
   document.title = "London Commute Map: " + meta.name;
   applyRoute();
+  $("mapLoading").hidden = true;
   if (!first) map.panTo([meta.lat, meta.lng]);
 }
 
 (async function init() {
   try {
-    [BASE, MANIFEST] = await Promise.all([fetchJSON("data/base.json"), fetchJSON("data/destinations.json")]);
+    [BASE, MANIFEST] = await Promise.all([E.base || fetchJSON("data/base.json"), E.manifest || fetchJSON("data/destinations.json")]);
   } catch (e) {
+    $("mapLoading").hidden = true;
     $("cards").innerHTML = '<p class="err">Could not load map data. Try reloading.</p>';
     return;
   }
