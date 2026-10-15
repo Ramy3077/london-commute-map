@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>London Commute Map</title>
-<meta name="description" content="How long door-to-desk commutes to Liverpool Street station take from across London, with a direct-only view for single-seat rides. Powered by TfL Open Data.">
+<meta name="description" content="How long door-to-desk commutes to a London station take, for several destinations, with a direct-only view for single-seat rides. Powered by TfL Open Data.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230b6fb8%27/%3E%3Ctext x=%2716%27 y=%2724%27 font-size=%2722%27 text-anchor=%27middle%27 fill=%27white%27%3E%E2%98%85%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -45,11 +45,16 @@
   .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
 
-  .legend { display: flex; gap: 2px; margin-top: 16px; }
-  .legend div { flex: 1; height: 10px; }
-  .legend div:first-child { border-radius: 5px 0 0 5px; } .legend div:last-child { border-radius: 0 5px 5px 0; }
-  .legend-labels { display: flex; justify-content: space-between; color: var(--dim); font-size: 11.5px; margin-top: 3px; }
-  .legend-title { font-size: 12px; color: var(--dim); margin-top: 14px; }
+  .legend { display: flex; gap: 2px; margin-top: 8px; }
+  .legend div { flex: 1; height: 12px; }
+  .legend div:first-child { border-radius: 6px 0 0 6px; } .legend div:last-child { border-radius: 0 6px 6px 0; }
+  .legend-labels { display: flex; gap: 2px; color: var(--dim); font-size: 11.5px; margin-top: 3px; }
+  .legend-labels span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .dest { display: block; margin-top: 12px; font-size: 12px; color: var(--dim); }
+  .dest select { display: block; width: 100%; margin-top: 4px; padding: 9px 10px; font: inherit; font-size: 14px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .dest select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .err { color: #b42318; font-size: 13px; margin-top: 12px; }
+  .legend-title { font-size: 12px; color: var(--dim); margin-top: 16px; }
   .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--dim); }
   .check input { width: 16px; height: 16px; accent-color: var(--accent); }
 
@@ -76,7 +81,7 @@
   .leaflet-popup-content { font: 13px/1.5 -apple-system, "Segoe UI", sans-serif; }
   .leaflet-popup-content a { color: var(--accent); }
   .leaflet-tooltip.tip { background: var(--panel); color: var(--text); border: 1px solid var(--line); font: 12px/1.5 -apple-system, "Segoe UI", sans-serif; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
-  .leaflet-tile-pane { filter: grayscale(.9) brightness(1.1) contrast(.85); }
+  .leaflet-tile-pane { filter: grayscale(1) brightness(1.12) contrast(.75); }
   .leaflet-interactive:focus { outline: none; }
   .dest-star { font-size: 26px; color: #0f172a; text-shadow: 0 0 5px #fff, 0 0 12px #fff; }
 
@@ -89,18 +94,21 @@
 </head>
 <body>
 <div class="app">
-  <div id="map" role="application" aria-label="Map of commute times to Liverpool Street station"></div>
+  <div id="map" role="application" aria-label="Map of commute times to the chosen London station"></div>
 
   <aside class="side">
     <div class="pad">
       <header>
         <h1>London Commute Map</h1>
-        <div class="sub">Door-to-desk time to <span id="destName"></span> &middot; <span id="ref"></span></div>
+        <div class="sub" id="ref">&nbsp;</div>
       </header>
+      <label class="dest" for="dest">Commute to
+        <select id="dest" disabled><option>Loading...</option></select>
+      </label>
 
       <div class="intro" id="intro">
         <button class="x" id="introClose" aria-label="Hide intro">&times;</button>
-        <p><b>How to read it.</b> Each colour band is how long a public transport trip takes to get to the star, from the front door, including the walk at both ends. Teal is the shortest; pink is the longest.</p>
+        <p><b>How to read it.</b> Each colour band is how long a public transport trip takes to get to the star, from the front door, including the walk at both ends. Yellow is the shortest; dark purple is the longest.</p>
         <p><b>Direct only</b> keeps just single-seat rides: one tube, rail or bus leg with no changes. Areas with no such ride drop off the map, which is a useful view when strikes or delays make changes risky.</p>
       </div>
       <button class="reopen" id="introOpen" hidden>What am I looking at?</button>
@@ -113,7 +121,8 @@
 
       <div class="legend-title">Minutes, door to desk</div>
       <div class="legend" id="legend"></div>
-      <div class="legend-labels"><span>under 20</span><span>30</span><span>40</span><span>50</span><span>70</span></div>
+      <div class="legend-labels" id="legendLabels"></div>
+      <div class="hint">Areas beyond 70 minutes, and the river and parks, are left unshaded.</div>
 
       <label class="check"><input type="checkbox" id="showStations" checked> Stations (outline colour shows zone: dark 1, blue 2, grey 3+)</label>
 
@@ -128,21 +137,18 @@
   </aside>
 </div>
 
-<script src="data.js"></script>
 <script>
-const BAND_COLORS = ["#00a88f", "#2f9fe0", "#6f7ce8", "#a35cc4", "#c44b8f"];
-const BAND_OPACITY = [0.55, 0.45, 0.36, 0.28, 0.2];
-const state = { route: "any" };
+// Viridis, reversed in meaning: yellow is the shortest commute, dark purple the longest.
+const BAND_COLORS = ["#fde725", "#5ec962", "#21918c", "#3b528b", "#440154"];
+const BAND_OPACITY = 0.6;
+const state = { route: "any", dest: null };
 const $ = id => document.getElementById(id);
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-$("destName").textContent = DATA.destination.name;
-$("ref").textContent = DATA.commute_ref + " · built " + DATA.built_at.slice(0, 10);
-$("legend").innerHTML = BAND_COLORS.map(c => `<div style="background:${c}"></div>`).join("");
+const fetchJSON = url => fetch(url).then(r => { if (!r.ok) throw new Error(url + " " + r.status); return r.json(); });
 
 // ---------- intro ----------
 function showIntro(on) {
@@ -154,34 +160,35 @@ $("introClose").onclick = () => showIntro(false);
 $("introOpen").onclick = () => showIntro(true);
 
 // ---------- map ----------
-const map = L.map("map", { zoomControl: false }).setView([51.525, -0.07], 12);
+const map = L.map("map", { zoomControl: false }).setView([51.52, -0.08], 11);
 L.control.zoom({ position: "bottomleft" }).addTo(map);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Powered by TfL Open Data',
   maxZoom: 19,
 }).addTo(map);
+map.createPane("bands").style.zIndex = 250;
+
+let BASE = null, MANIFEST = [], cur = null, bands = null, starMarker = null;
+const destData = {};   // id -> loaded per-destination data
+const layers = {};     // district code -> leaflet layer
+let districts = {};    // district code -> merged base + current destination times
 
 function bandGroup(kind) {
   const g = L.layerGroup();
-  DATA.contours[kind].forEach((band, i) => {
-    for (const poly of band.polys) {
-      L.polygon(poly, { stroke: false, fillColor: BAND_COLORS[i], fillOpacity: BAND_OPACITY[i], interactive: false }).addTo(g);
+  cur.contours[kind].forEach((band, i) => {
+    for (const [tier, k] of [["polys", 1], ["mid", 0.6], ["outer", 0.3]]) {
+      for (const poly of band[tier] || []) {
+        L.polygon(poly, { pane: "bands", stroke: tier === "polys", weight: 0.6, color: "#ffffff", opacity: 0.55,
+          fillColor: BAND_COLORS[i], fillOpacity: BAND_OPACITY * k, interactive: false }).addTo(g);
+      }
     }
   });
   return g;
 }
-const bands = { any: bandGroup("any"), direct: bandGroup("direct") };
-bands.any.addTo(map);
-
-L.marker([DATA.destination.lat, DATA.destination.lng], {
-  icon: L.divIcon({ className: "", html: '<div class="dest-star">★</div>', iconAnchor: [13, 16] }),
-  keyboard: false,
-}).addTo(map).bindTooltip(DATA.destination.name, { className: "tip" });
 
 // ---------- districts ----------
-const layers = {};
 function geometry(d) {
-  const b = DATA.boundaries[d.code];
+  const b = BASE.boundaries[d.code];
   return b || d.rings.map(ring => [ring.map(([lng, lat]) => [lat, lng])]);
 }
 const noDirect = d => state.route === "direct" && d.td == null;
@@ -200,32 +207,36 @@ function info(d) {
     `Direct: <b>${d.td != null ? d.td + " min" : "no single-seat ride"}</b><br>` +
     `Via ${d.via.length ? esc(d.via.join(", ")) : "n/a"}`;
 }
-for (const d of Object.values(DATA.districts)) {
-  const layer = L.polygon(geometry(d), style(d));
-  layer.bindTooltip(info(d), { className: "tip", sticky: true });
-  layer.on("mouseover", () => layer.setStyle({ weight: 2.5, color: "#0ea5e9" }));
-  layer.on("mouseout", () => layer.setStyle(style(d)));
-  layer.on("click", () => layer.bindPopup(info(d) + `<div class="links">${searchLinks(d)}</div>`).openPopup());
-  layer.addTo(map);
-  layers[d.code] = layer;
+function buildDistrictLayers() {
+  for (const d of Object.values(BASE.districts)) {
+    const layer = L.polygon(geometry(d), style({ td: 0 }));
+    layer.on("mouseover", () => layer.setStyle({ weight: 2.5, color: "#0ea5e9" }));
+    layer.on("mouseout", () => layer.setStyle(style(districts[d.code])));
+    layer.on("click", () => layer.bindPopup(info(districts[d.code]) + `<div class="links">${searchLinks(districts[d.code])}</div>`).openPopup());
+    layer.bindTooltip(() => info(districts[d.code]), { className: "tip", sticky: true });
+    layer.addTo(map);
+    layers[d.code] = layer;
+  }
 }
 
 // ---------- stations ----------
 const zoneColor = z => { const n = parseInt(String(z)); return n === 1 ? "#0f172a" : n === 2 ? "#2563eb" : "#94a3b8"; };
 const stationLayer = L.layerGroup();
-for (const s of DATA.stations) {
-  L.circleMarker([s.lat, s.lng], { radius: 3.5, weight: 1.7, color: zoneColor(s.zone), fillColor: "#fff", fillOpacity: 1 })
-    .bindTooltip(`${esc(s.name)} · zone ${esc(s.zone || "?")}<br>${esc(s.lines.join(", "))}`, { className: "tip" })
-    .addTo(stationLayer);
+function buildStations() {
+  for (const s of BASE.stations) {
+    L.circleMarker([s.lat, s.lng], { radius: 3.5, weight: 1.7, color: zoneColor(s.zone), fillColor: "#fff", fillOpacity: 1 })
+      .bindTooltip(`${esc(s.name)} · zone ${esc(s.zone || "?")}<br>${esc(s.lines.join(", "))}`, { className: "tip" })
+      .addTo(stationLayer);
+  }
+  stationLayer.addTo(map);
 }
-stationLayer.addTo(map);
 $("showStations").onchange = e => e.target.checked ? stationLayer.addTo(map) : map.removeLayer(stationLayer);
 
 // ---------- ranked list ----------
 function renderCards() {
   const direct = state.route === "direct";
   const key = d => direct ? (d.td ?? 9999) : d.ta;
-  const list = Object.values(DATA.districts).filter(d => d.ta != null).sort((a, b) => key(a) - key(b));
+  const list = Object.values(districts).filter(d => d.ta != null).sort((a, b) => key(a) - key(b));
   const box = $("cards"); box.innerHTML = "";
   for (const d of list) {
     const mins = direct ? d.td : d.ta;
@@ -254,22 +265,80 @@ function renderCards() {
 }
 
 // ---------- route toggle ----------
-function setRoute(r) {
-  state.route = r;
+function applyRoute() {
+  const r = state.route;
   $("btnAny").setAttribute("aria-pressed", r === "any");
   $("btnDirect").setAttribute("aria-pressed", r === "direct");
   $("routeHint").textContent = r === "any"
     ? "Fastest journey, changes allowed."
     : "Single-seat rides only: one tube, rail or bus leg, walking at each end. Faded areas have none.";
-  const other = bands[r === "any" ? "direct" : "any"];
-  if (map.hasLayer(other)) map.removeLayer(other);
+  for (const k of ["any", "direct"]) if (map.hasLayer(bands[k])) map.removeLayer(bands[k]);
   bands[r].addTo(map);
-  for (const d of Object.values(DATA.districts)) layers[d.code].setStyle(style(d));
+  for (const d of Object.values(districts)) layers[d.code].setStyle(style(d));
   renderCards();
 }
-$("btnAny").onclick = () => setRoute("any");
-$("btnDirect").onclick = () => setRoute("direct");
-setRoute("any");
+$("btnAny").onclick = () => { state.route = "any"; applyRoute(); };
+$("btnDirect").onclick = () => { state.route = "direct"; applyRoute(); };
+
+// ---------- destinations ----------
+function legend() {
+  const lv = BASE.levels;
+  $("legend").innerHTML = BAND_COLORS.map(c => `<div style="background:${c}"></div>`).join("");
+  $("legendLabels").innerHTML = lv.slice(0, -1).map((lo, i) =>
+    `<span>${i === 0 ? "&lt;" + lv[1] : lo + "-" + lv[i + 1]}</span>`).join("");
+}
+async function showDest(id, first) {
+  const meta = MANIFEST.find(m => m.id === id) || MANIFEST[0];
+  $("dest").value = meta.id;
+  try {
+    if (!destData[meta.id]) destData[meta.id] = await fetchJSON(`data/${meta.id}.json`);
+  } catch (e) {
+    $("cards").innerHTML = `<p class="err">Could not load data for ${esc(meta.name)}. Try again.</p>`;
+    return;
+  }
+  cur = destData[meta.id];
+  state.dest = meta;
+  try { history.replaceState(null, "", "#" + meta.id); } catch (e) {}
+  store.set("dest", meta.id);
+
+  districts = {};
+  for (const [code, d] of Object.entries(BASE.districts)) {
+    const t = cur.districts[code] || [null, null, 0, []];
+    districts[code] = { code, name: d.name, rings: d.rings, ta: t[0], td: t[1], via: t[3] };
+  }
+  if (bands) for (const k of ["any", "direct"]) if (map.hasLayer(bands[k])) map.removeLayer(bands[k]);
+  bands = { any: bandGroup("any"), direct: bandGroup("direct") };
+
+  if (starMarker) map.removeLayer(starMarker);
+  starMarker = L.marker([meta.lat, meta.lng], {
+    icon: L.divIcon({ className: "", html: '<div class="dest-star">★</div>', iconAnchor: [13, 16] }),
+    keyboard: false,
+  }).addTo(map).bindTooltip(meta.name, { className: "tip" });
+  map.getContainer().setAttribute("aria-label", "Map of commute times to " + meta.name);
+
+  $("ref").textContent = BASE.commute_ref + " · built " + cur.built_at.slice(0, 10);
+  document.title = "London Commute Map: " + meta.name;
+  applyRoute();
+}
+
+(async function init() {
+  try {
+    [BASE, MANIFEST] = await Promise.all([fetchJSON("data/base.json"), fetchJSON("data/destinations.json")]);
+  } catch (e) {
+    $("cards").innerHTML = '<p class="err">Could not load map data. Try reloading.</p>';
+    return;
+  }
+  const sel = $("dest");
+  sel.innerHTML = MANIFEST.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
+  sel.disabled = false;
+  sel.onchange = () => showDest(sel.value);
+  legend();
+  buildDistrictLayers();
+  buildStations();
+  const want = location.hash.slice(1) || store.get("dest");
+  await showDest(MANIFEST.some(m => m.id === want) ? want : MANIFEST[0].id, true);
+  map.fitBounds([[BASE.bbox.south + 0.015, BASE.bbox.west + 0.03], [BASE.bbox.north - 0.015, BASE.bbox.east - 0.03]]);
+})();
 </script>
 </body>
 </html>

@@ -1,0 +1,6 @@
+requests>=2.31
+h3>=4.1
+numpy>=1.26
+matplotlib>=3.8
+shapely>=2.0
+pytest>=8

@@ -7,12 +7,16 @@ from datetime import date, timedelta
 
 # Free key from https://api-portal.tfl.gov.uk (required for the build).
 TFL_APP_KEY = os.environ.get("TFL_APP_KEY", "")
-# Free key from https://openrouteservice.org (optional: only used for walking
-# times, which are not shown on the map).
-ORS_API_KEY = os.environ.get("ORS_API_KEY", "")
 
-# The destination every journey is timed to.
-DESTINATION = {"lat": 51.5178, "lng": -0.0823, "name": "Liverpool Street station"}
+# Destinations the map is pre-built for. Each gets its own data file
+# (data/<id>.json) and its own journey cache. Add yours here, then run
+# `uv run build.py --dest <id>`.
+DESTINATIONS = [
+    {"id": "liverpool-street", "name": "Liverpool Street station", "lat": 51.5178, "lng": -0.0823},
+    {"id": "kings-cross", "name": "King's Cross St Pancras station", "lat": 51.5308, "lng": -0.1238},
+    {"id": "canary-wharf", "name": "Canary Wharf station", "lat": 51.5054, "lng": -0.0235},
+    {"id": "paddington", "name": "Paddington station", "lat": 51.5154, "lng": -0.1755},
+]
 
 # Area to cover. Zone 1-2 core plus the main direct-line corridors.
 BBOX = {"north": 51.61, "south": 51.43, "west": -0.22, "east": 0.055}

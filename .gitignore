@@ -5,3 +5,4 @@ data.json
 *.pyc
 .vercel/
 .DS_Store
+.playwright-mcp/
