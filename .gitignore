@@ -1,0 +1,7 @@
+cache/
+__pycache__/
+data.json
+.env
+*.pyc
+.vercel/
+.DS_Store
