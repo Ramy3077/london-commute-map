@@ -319,6 +319,7 @@ async function showDest(id, first) {
   $("ref").textContent = BASE.commute_ref + " · built " + cur.built_at.slice(0, 10);
   document.title = "London Commute Map: " + meta.name;
   applyRoute();
+  if (!first) map.panTo([meta.lat, meta.lng]);
 }
 
 (async function init() {
