@@ -2,7 +2,7 @@
 
 A map of how long a door-to-desk commute to Liverpool Street station takes from across London, with a direct-only view for single-seat rides.
 
-**Live: https://london-commute-map.vercel.app**
+**Live: https://web-production-62771.up.railway.app**
 
 ![London Commute Map](docs/screenshot.png)
 
